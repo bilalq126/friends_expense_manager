@@ -15,20 +15,13 @@ firebaseConfig = {
     "databaseURL": ""
 }
 
-# REMOVE this line:
-# cred = credentials.Certificate("serviceAccountKey.json")  # Path to your downloaded service account key
-
-# REPLACE with:
-firebase_creds = st.secrets["firebase"]
-cred = credentials.Certificate(dict(firebase_creds))
-
 # Initialize pyrebase for authentication
 firebase = pyrebase.initialize_app(firebaseConfig)
 auth = firebase.auth()
 
 # Initialize Firestore
 if not firebase_admin._apps:
-    # Use Streamlit secrets for credentials
+    cred = credentials.Certificate(dict(st.secrets["firebase"]))
     firebase_admin.initialize_app(cred)
 db = firestore.client()
 
