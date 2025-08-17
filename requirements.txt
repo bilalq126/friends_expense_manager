@@ -1,0 +1,4 @@
+streamlit
+pyrebase
+firebase-admin
+setuptools
