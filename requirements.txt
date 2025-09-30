@@ -1,4 +1,8 @@
 streamlit
-pyrebase
-firebase-admin
+requests
+pandas
 setuptools
+gspread
+google-auth
+google-auth-oauthlib
+google-auth-httplib2

@@ -1,35 +1,54 @@
 import streamlit as st
 import pandas as pd
-import os
+import requests
 from datetime import datetime
 
 # Fixed list of friends
 FRIENDS = ["Bilal Qadeer", "Habib Khan", "Abdur Rehman", "Rehan Umer"]
-CSV_FILE = "expenses.csv"
 
+@st.cache_data(ttl=30)  # Cache for 30 seconds to avoid too many API calls
 def load_expenses():
-    """Load expenses from CSV file"""
-    if os.path.exists(CSV_FILE):
-        return pd.read_csv(CSV_FILE)
-    else:
-        # Create empty DataFrame with required columns
-        return pd.DataFrame(columns=['Date', 'Amount', 'Payers', 'Contributions', 'Present', 'Description'])
+    """Load expenses from Sheety API"""
+    try:
+        sheety_url = st.secrets["sheety"]["get_url"]
+        response = requests.get(sheety_url)
+        
+        if response.status_code == 200:
+            data = response.json()
+            expenses = data.get("expenses", [])  # Replace "expenses" with your sheet name
+            if expenses:
+                return pd.DataFrame(expenses)
+        
+        return pd.DataFrame(columns=['date', 'amount', 'payers', 'contributions', 'present', 'description'])
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        return pd.DataFrame(columns=['date', 'amount', 'payers', 'contributions', 'present', 'description'])
 
 def save_expense(amount, payers_contributions, present, description):
-    """Save expense to CSV file"""
-    expenses_df = load_expenses()
-    
-    new_expense = {
-        'Date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        'Amount': amount,
-        'Payers': ', '.join([f"{name}: {contrib}" for name, contrib in payers_contributions.items() if contrib > 0]),
-        'Contributions': str(payers_contributions),
-        'Present': ', '.join(present),
-        'Description': description
-    }
-    
-    expenses_df = pd.concat([expenses_df, pd.DataFrame([new_expense])], ignore_index=True)
-    expenses_df.to_csv(CSV_FILE, index=False)
+    """Save expense to Sheety API"""
+    try:
+        sheety_url = st.secrets["sheety"]["post_url"]
+        
+        expense_data = {
+            "expense": {  # Replace "expense" with your sheet name (singular)
+                "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "amount": amount,
+                "payers": ', '.join([f"{name}: {contrib}" for name, contrib in payers_contributions.items() if contrib > 0]),
+                "contributions": str(payers_contributions),
+                "present": ', '.join(present),
+                "description": description
+            }
+        }
+        
+        response = requests.post(sheety_url, json=expense_data)
+        
+        if response.status_code != 200:
+            st.error(f"Failed to save expense: {response.text}")
+            return False
+        return True
+    except Exception as e:
+        st.error(f"Error saving expense: {e}")
+        return False
 
 def calculate_balances():
     """Calculate net balances for each friend"""
@@ -37,9 +56,9 @@ def calculate_balances():
     balances = {friend: 0.0 for friend in FRIENDS}
     
     for _, expense in expenses_df.iterrows():
-        amount = float(expense['Amount'])
-        contributions = eval(expense['Contributions'])
-        present = expense['Present'].split(', ')
+        amount = float(expense['amount'])
+        contributions = eval(expense['contributions'])
+        present = expense['present'].split(', ')
         
         # Calculate split amount per person
         split_per_person = amount / len(present)
@@ -101,9 +120,12 @@ def main():
         present = st.multiselect("Select who was present", FRIENDS, default=FRIENDS)
         
         if st.button("Add Expense", disabled=(total_amount == 0 or len(present) == 0 or total_paid != total_amount)):
-            save_expense(total_amount, payers_contributions, present, description)
-            st.success("Expense added successfully!")
-            st.rerun()
+            if save_expense(total_amount, payers_contributions, present, description):
+                st.success("Expense added successfully!")
+                st.cache_data.clear()  # Clear cache to reload data
+                st.rerun()
+            else:
+                st.error("Failed to add expense!")
     
     # Main content
     col1, col2 = st.columns(2)
@@ -137,7 +159,7 @@ def main():
     if not expenses_df.empty:
         # Display expenses in reverse chronological order
         expenses_df_display = expenses_df.copy()
-        expenses_df_display['Amount'] = expenses_df_display['Amount'].apply(lambda x: f"PKR {x:.2f}")
+        expenses_df_display['amount'] = expenses_df_display['amount'].apply(lambda x: f"PKR {float(x):.2f}")
         st.dataframe(expenses_df_display.iloc[::-1], use_container_width=True)
         
         # Download CSV button
@@ -148,6 +170,38 @@ def main():
             file_name="friends_expenses.csv",
             mime="text/csv"
         )
+        
+        # Show Sheety/Google Sheets link
+        sheet_url = st.secrets["sheety"].get("sheet_url", "")
+        if sheet_url:
+            st.markdown(f"📊 [View Live Google Sheet]({sheet_url})")
+    else:
+        st.info("No expenses recorded yet. Add your first expense using the sidebar!")
+
+if __name__ == "__main__":
+    main()
+    expenses_df = load_expenses()
+    
+    if not expenses_df.empty:
+        # Display expenses in reverse chronological order
+        expenses_df_display = expenses_df.copy()
+        expenses_df_display['Amount'] = expenses_df_display['Amount'].apply(lambda x: f"PKR {float(x):.2f}")
+        st.dataframe(expenses_df_display.iloc[::-1], use_container_width=True)
+        
+        # Download CSV button
+        csv_data = expenses_df.to_csv(index=False)
+        st.download_button(
+            label="Download Expenses CSV",
+            data=csv_data,
+            file_name="friends_expenses.csv",
+            mime="text/csv"
+        )
+        
+        # Show Google Sheets link
+        sheet = init_google_sheets()
+        if sheet:
+            sheet_url = f"https://docs.google.com/spreadsheets/d/{sheet.spreadsheet.id}"
+            st.markdown(f"📊 [View Live Google Sheet]({sheet_url})")
     else:
         st.info("No expenses recorded yet. Add your first expense using the sidebar!")
 
