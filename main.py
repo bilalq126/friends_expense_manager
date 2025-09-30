@@ -15,7 +15,8 @@ def load_expenses():
         
         if response.status_code == 200:
             data = response.json()
-            expenses = data.get("expenses", [])
+            # Try different possible keys based on your sheet name
+            expenses = data.get("sheet1", data.get("expenses", []))
             if expenses:
                 return pd.DataFrame(expenses)
         
@@ -55,21 +56,37 @@ def calculate_balances():
     expenses_df = load_expenses()
     balances = {friend: 0.0 for friend in FRIENDS}
     
+    # Debug: Show what data we're getting
+    if not expenses_df.empty:
+        st.sidebar.write("Debug - Data loaded:", len(expenses_df), "rows")
+        st.sidebar.write("Debug - Columns:", list(expenses_df.columns))
+    
     for _, expense in expenses_df.iterrows():
-        amount = float(expense['amount'])
-        contributions = eval(expense['contributions'])
-        present = expense['present'].split(', ')
-        
-        # Calculate split amount per person
-        split_per_person = amount / len(present)
-        
-        # Update balances
-        for friend in present:
-            balances[friend] -= split_per_person  # Everyone owes their share
+        try:
+            amount = float(expense['amount'])
+            # Handle string evaluation safely
+            contributions_str = expense['contributions']
+            if isinstance(contributions_str, str):
+                contributions = eval(contributions_str)
+            else:
+                contributions = contributions_str
             
-        for friend, contribution in contributions.items():
-            if contribution > 0:
-                balances[friend] += contribution  # Add what they paid
+            present = expense['present'].split(', ') if isinstance(expense['present'], str) else expense['present']
+            
+            # Calculate split amount per person
+            split_per_person = amount / len(present)
+            
+            # Update balances
+            for friend in present:
+                if friend in balances:  # Make sure friend exists in our list
+                    balances[friend] -= split_per_person
+                    
+            for friend, contribution in contributions.items():
+                if friend in balances and contribution > 0:
+                    balances[friend] += float(contribution)
+        except Exception as e:
+            st.error(f"Error processing expense: {e}")
+            continue
     
     return balances
 
