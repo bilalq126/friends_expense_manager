@@ -30,7 +30,7 @@ def save_expense(amount, payers_contributions, present, description):
         sheety_url = st.secrets["sheety"]["post_url"]
         
         expense_data = {
-            "expense": {
+            "sheet1": {  # Changed from "expense" to "sheet1" (or your actual sheet name)
                 "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "amount": amount,
                 "payers": ', '.join([f"{name}: {contrib}" for name, contrib in payers_contributions.items() if contrib > 0]),
